@@ -22,7 +22,7 @@ const AsideNav = () => {
       {/* <NavigationTab title="chats"  path="/home/chats"  /> Now to make this dynamic we create navigations seperately and map it here  */}
 
       {navigations.map((val) => {
-        return <NavigationTab title={val.title} path={val.path} icon={val.icon} />;
+        return <NavigationTab  title={val.title} path={val.path} icon={val.icon} />;
       })}
     </div>
   );

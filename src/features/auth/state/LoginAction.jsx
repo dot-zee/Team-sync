@@ -28,7 +28,7 @@ export const currentEmployee = createAsyncThunk(
   async (_, { rejectWithValue }) => {
     try {
       const res = await axiosInstance.get("auth/me");
-      console.log(res);
+      // console.log(res);
       return res.data.user;
     } catch (error) {
       return rejectWithValue(error);

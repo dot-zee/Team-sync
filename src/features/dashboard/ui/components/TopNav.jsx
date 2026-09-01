@@ -1,17 +1,18 @@
-import { Bell, Menu, Search } from "lucide-react";
+import { Bell, Lightbulb, Menu, Moon, Search } from "lucide-react";
 import { useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { toggleTheme } from "../../../../shared/state/themeSlice";
 
 const TopNav = () => {
   const dispatch = useDispatch();
-  const theme = useSelector((state) => state.theme.mode);
+  // const theme = useSelector((state) => state.theme.mode); // Another way
+  const {mode} = useSelector(store => store.theme)
 
   useEffect(() => {
-    document.documentElement.classList.toggle("light", theme === "light");
-  }, [theme]);
+    document.documentElement.classList.toggle("light", mode === "light");
+  }, [mode]);
 
-
+  
 
   const changeTheme = () => {
     dispatch(toggleTheme());
@@ -28,7 +29,9 @@ const TopNav = () => {
         />
       </div>
       <div className="flex gap-4">
-        <button onClick={changeTheme}>Change theme</button>
+        {
+          mode === "light" ? <Lightbulb onClick={changeTheme} /> : <Moon onClick={changeTheme} />
+        }
 
         <Bell size={23} />
         <Menu size={23} />

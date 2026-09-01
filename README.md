@@ -14,10 +14,11 @@ Team-sync is a React single-page application for collaborative workspace managem
 3. [API Configuration](#api-configuration)
 4. [Authentication and State Management](#authentication-and-state-management)
 5. [Protected Routes](#protected-routes)
-6. [User Hydration](#user-hydration)
-7. [Theme Toggle System](#theme-toggle-system)
-8. [Axios Interceptors and Session Renewal](#axios-interceptors-and-session-renewal)
-9. [Local Development](#local-development)
+6. [Role-Based Routing](#role-based-routing)
+7. [User Hydration](#user-hydration)
+8. [Theme Toggle System](#theme-toggle-system)
+9. [Axios Interceptors and Session Renewal](#axios-interceptors-and-session-renewal)
+10. [Local Development](#local-development)
 
 ## Project Architecture
 
@@ -73,27 +74,31 @@ Feature code stays close to the user workflow it serves. App-wide concerns such 
 
 ```jsx
 const router = createBrowserRouter([
-	{
-		path: "/",
-		element: <PublicRoute />,
-		children: [{
-			path: "",
-			element: <AuthLayout />,
-			children: [
-				{ path: "", element: <LoginInPage /> },
-				{ path: "register", element: <RegisterPage /> },
-			],
-		}],
-	},
-	{
-		path: "/home",
-		element: <ProtectedRoute />,
-		children: [{
-			path: "",
-			element: <DashboardLayout />,
-			children: [{ path: "", element: <Home /> }],
-		}],
-	},
+  {
+    path: "/",
+    element: <PublicRoute />,
+    children: [
+      {
+        path: "",
+        element: <AuthLayout />,
+        children: [
+          { path: "", element: <LoginInPage /> },
+          { path: "register", element: <RegisterPage /> },
+        ],
+      },
+    ],
+  },
+  {
+    path: "/home",
+    element: <ProtectedRoute />,
+    children: [
+      {
+        path: "",
+        element: <DashboardLayout />,
+        children: [{ path: "", element: <Home /> }],
+      },
+    ],
+  },
 ]);
 ```
 
@@ -107,8 +112,8 @@ The API boundary lives in `src/config/axiosInstance.jsx`. Every feature can impo
 import axios from "axios";
 
 export const axiosInstance = axios.create({
-	baseURL: "https://team-sync-backend-n78w.onrender.com/api",
-	withCredentials: true,
+  baseURL: "https://team-sync-backend-n78w.onrender.com/api",
+  withCredentials: true,
 });
 ```
 
@@ -120,10 +125,10 @@ The application is mounted inside Redux's `Provider` in `src/main.jsx`:
 
 ```jsx
 createRoot(document.getElementById("root")).render(
-	<Provider store={store}>
-		<AppRoutes />
-		<ToastContainer />
-	</Provider>,
+  <Provider store={store}>
+    <AppRoutes />
+    <ToastContainer />
+  </Provider>,
 );
 ```
 
@@ -133,10 +138,10 @@ createRoot(document.getElementById("root")).render(
 
 ```js
 export const store = configureStore({
-	reducer: {
-		auth: authReducer,
-		theme: themeReducer,
-	},
+  reducer: {
+    auth: authReducer,
+    theme: themeReducer,
+  },
 });
 ```
 
@@ -149,8 +154,8 @@ const loggedInEmployee = localStorage.getItem("employee");
 const parsedEmployee = loggedInEmployee ? JSON.parse(loggedInEmployee) : null;
 
 const initialState = {
-	employee: parsedEmployee,
-	isLoading: false,
+  employee: parsedEmployee,
+  isLoading: false,
 };
 ```
 
@@ -162,18 +167,18 @@ The login form is managed by `useAuth` and submits credentials to the login endp
 
 ```js
 export const loginAction = createAsyncThunk(
-	"auth/login",
-	async (credentials, { rejectWithValue }) => {
-		try {
-			const res = await axiosInstance.post("auth/login", credentials);
-			toast.success("Logged in successfully");
-			localStorage.setItem("employee", JSON.stringify(res.data.data));
-			return res.data.data;
-		} catch (error) {
-			toast.error("Login Failed");
-			return rejectWithValue(error);
-		}
-	},
+  "auth/login",
+  async (credentials, { rejectWithValue }) => {
+    try {
+      const res = await axiosInstance.post("auth/login", credentials);
+      toast.success("Logged in successfully");
+      localStorage.setItem("employee", JSON.stringify(res.data.data));
+      return res.data.data;
+    } catch (error) {
+      toast.error("Login Failed");
+      return rejectWithValue(error);
+    }
+  },
 );
 ```
 
@@ -185,16 +190,100 @@ The current registration page and form validation are present, but `onRegister` 
 
 ```jsx
 const ProtectedRoute = () => {
-	const { employee, isLoading } = useSelector((store) => store.auth);
+  const { employee, isLoading } = useSelector((store) => store.auth);
 
-	if (isLoading) return <h1>Loading...</h1>;
-	if (!employee) return <Navigate to="/" />;
+  if (isLoading) return <h1>Loading...</h1>;
+  if (!employee) return <Navigate to="/" />;
 
-	return <Outlet />;
+  return <Outlet />;
 };
 ```
 
 This keeps authorization logic out of individual pages. `PublicRoute` applies the inverse rule: an already authenticated employee is redirected from public pages to `/home`.
+
+## Role-Based Routing
+
+Role-based routing builds on the authenticated `employee` already stored in Redux. The current implementation recognizes two role values: `admin` and `employee`.
+
+### 1. Make the role available
+
+`loginAction` stores the employee returned by `auth/login` in local storage and returns it to the `auth` slice. On a later page load, `currentEmployee` calls `auth/me` and hydrates the same Redux state. In both cases, the role is read from `employee.role`.
+
+```js
+// src/features/auth/state/authSlice.jsx
+initialState: {
+	employee: parsedEmployee,
+	isLoading: false,
+}
+```
+
+The role is therefore available to both route guards and dashboard navigation through `state.auth.employee`.
+
+### 2. Check the employee role
+
+`src/routes/protectedRoutes/RoleBasedRoutes.jsx` receives an `allowedRole` prop and compares it with the current employee's role:
+
+```jsx
+export const RoleBasedRoutes = ({ allowedRole }) => {
+  const { employee } = useSelector((store) => store.auth);
+
+  if (!allowedRole.includes(employee?.role)) {
+    return <Navigate to="/unauthorized" />;
+  }
+
+  return <Outlet />;
+};
+```
+
+The optional chaining prevents a role access error while the employee value is unavailable. Authentication itself is handled one level above by `ProtectedRoute`; this component handles authorization after the route has passed the authentication check.
+
+### 3. Group routes by role
+
+The route definitions are separated into `src/routes/adminRoutes.jsx`, `src/routes/employeeRoutes.jsx`, and `src/routes/commonRoutes.jsx`:
+
+- `commonRoutes` is available to every authenticated employee: `/home`, `/home/chats`, and `/home/settings`.
+- `adminRoutes` contains `/home/department`, `/home/documents`, `/home/employees-management`, and `/home/tasks`.
+- `employeeRoutes` contains `/home/attendance`, `/home/my-task`, and `/home/profile`.
+
+`AppRoutes.jsx` nests the role-specific arrays under the authenticated dashboard layout:
+
+```jsx
+{
+	element: <RoleBasedRoutes allowedRole="admin" />,
+	children: adminRoutes,
+},
+{
+	element: <RoleBasedRoutes allowedRole="employee" />,
+	children: employeeRoutes,
+},
+```
+
+Because each guard renders an `<Outlet />` only for the matching role, the child pages are rendered only after authorization succeeds. Unmatched role checks navigate to `/unauthorized`. The current route configuration does not define an `/unauthorized` page, so that destination should be added if a dedicated unauthorized screen is required.
+
+### 4. Match dashboard navigation to the role
+
+Role-based access is also reflected in `src/app/constants/navigations.jsx`. `AsideNav.jsx` selects one navigation list from `state.auth.employee.role`:
+
+```jsx
+const navigations =
+  employee?.role === "admin" ? adminNavigations : employeeNavigations;
+
+return navigations.map((value) => (
+  <NavigationTab title={value.title} path={value.path} icon={value.icon} />
+));
+```
+
+This controls which links appear in the dashboard sidebar. It complements, but does not replace, `RoleBasedRoutes`: the route guard remains the enforcement point when a user manually enters a URL.
+
+### Complete request flow
+
+1. The user submits the login form and `loginAction` requests `auth/login`.
+2. The returned employee is placed in `state.auth.employee`, including its lowercase `role` value, and cached in local storage.
+3. On application load, `currentEmployee` calls `auth/me` to restore the server-backed session when available.
+4. `ProtectedRoute` checks that an employee exists before rendering the `/home` dashboard branch.
+5. `AppRoutes` sends common pages to all authenticated users and wraps admin or employee pages with `RoleBasedRoutes`.
+6. `RoleBasedRoutes` compares `employee.role` to `allowedRole`; matching users see the page, while non-matching users are redirected to `/unauthorized`.
+7. `AsideNav` selects the matching navigation list so the sidebar presents the links for that role.
 
 ## User Hydration
 
@@ -202,7 +291,7 @@ On application startup, `AppRoutes` dispatches `currentEmployee()` in a `useEffe
 
 ```jsx
 useEffect(() => {
-	dispatch(currentEmployee());
+  dispatch(currentEmployee());
 }, []);
 ```
 
@@ -210,15 +299,15 @@ The thunk calls `auth/me` and places the returned user in Redux. While that requ
 
 ```js
 export const currentEmployee = createAsyncThunk(
-	"auth/me",
-	async (_, { rejectWithValue }) => {
-		try {
-			const res = await axiosInstance.get("auth/me");
-			return res.data.user;
-		} catch (error) {
-			return rejectWithValue(error);
-		}
-	},
+  "auth/me",
+  async (_, { rejectWithValue }) => {
+    try {
+      const res = await axiosInstance.get("auth/me");
+      return res.data.user;
+    } catch (error) {
+      return rejectWithValue(error);
+    }
+  },
 );
 ```
 
@@ -228,16 +317,16 @@ Theme state is kept in `src/shared/state/themeSlice.jsx` so it can be consumed b
 
 ```js
 const themeSlice = createSlice({
-	name: "theme",
-	initialState: {
-		mode: localStorage.getItem("theme") || "dark",
-	},
-	reducers: {
-		toggleTheme: (state) => {
-			state.mode = state.mode === "dark" ? "light" : "dark";
-			localStorage.setItem("theme", state.mode);
-		},
-	},
+  name: "theme",
+  initialState: {
+    mode: localStorage.getItem("theme") || "dark",
+  },
+  reducers: {
+    toggleTheme: (state) => {
+      state.mode = state.mode === "dark" ? "light" : "dark";
+      localStorage.setItem("theme", state.mode);
+    },
+  },
 });
 ```
 
@@ -247,7 +336,7 @@ const themeSlice = createSlice({
 const theme = useSelector((state) => state.theme.mode);
 
 useEffect(() => {
-	document.documentElement.classList.toggle("light", theme === "light");
+  document.documentElement.classList.toggle("light", theme === "light");
 }, [theme]);
 ```
 
@@ -259,22 +348,22 @@ The response interceptor in `src/config/axiosInstance.jsx` is a recovery layer f
 
 ```js
 axiosInstance.interceptors.response.use(
-	(response) => response,
-	async (error) => {
-		const originalReq = error.config;
+  (response) => response,
+  async (error) => {
+    const originalReq = error.config;
 
-		if (error.response.status === 401 && !originalReq._retry) {
-			originalReq._retry = true;
+    if (error.response.status === 401 && !originalReq._retry) {
+      originalReq._retry = true;
 
-			try {
-				await axiosInstance.get("/auth/get-accessToken");
-				return axiosInstance(originalReq);
-			} catch (refreshError) {
-				window.location.href = "/";
-				return Promise.reject(refreshError);
-			}
-		}
-	},
+      try {
+        await axiosInstance.get("/auth/get-accessToken");
+        return axiosInstance(originalReq);
+      } catch (refreshError) {
+        window.location.href = "/";
+        return Promise.reject(refreshError);
+      }
+    }
+  },
 );
 ```
 
